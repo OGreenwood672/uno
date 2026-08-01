@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Uno Game
 
-## Getting Started
+This is a real-time multiplayer Uno card game built with Next.js, PartyKit, and TypeScript.
 
-First, run the development server:
+## Features
+
+- Real-time multiplayer gameplay
+- Lobby system to join and start games
+- Animated card aovements
+- Theming support (Classic, Dark Mode, Neon)
+
+## Technologies Used
+
+- **Frontend:** [Next.js](https://nextjs.org/) (React)
+- **Real-time Backend:** [PartyKit](https://www.partykit.io/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Animation:** [Framer Motion](https://www.framer.com/motion/)
+- **Language:** [TypeScript](https://www.typescriptlang.org/)
+
+## Project Structure
+
+- `app/`: Next.js App Router pages. The main game client is located at `app/play/[roomId]`.
+- `components/`: Reusable React components.
+- `party/`: PartyKit server-side code (`game-server.ts`).
+- `public/`: Static assets.
+- `types/`: TypeScript type definitions for the game state and actions.
+- `utils/`: Utility functions, such as deck creation.
+
+## How to Run
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (version 20 or later)
+- [npm](https://www.npmjs.com/)
+
+### 1. Installation
+
+Clone the repository and install the dependencies:
+
+```bash
+git clone <repository-url>
+cd uno-game
+npm install
+```
+
+### 2. Running the Development Servers
+
+You need to run two separate processes in two different terminals.
+
+**Terminal 1: Start the PartyKit Server**
+
+This server handles the real-time game logic.
+
+```bash
+npm run party
+```
+
+You should see an output similar to this:
+```
+🎈 partykit dev
+starting...
+local party server running at http://127.0.0.1:1999
+```
+
+**Terminal 2: Start the Next.js Frontend**
+
+This server handles the user interface.
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+You should see an output similar to this:
+```
+- ready started server on 0.0.0.0:3000, url: http://localhost:3000
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Playing the Game
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1.  Open your browser and navigate to `http://localhost:3000`.
+2.  You will be redirected to a new game room with a unique URL like `http://localhost:3000/play/your-room-id`.
+3.  Share this URL with a friend.
+4.  Enter your name and click "Join Game".
+5.  Once at least two players have joined, the "Start Game" button will become enabled.
+6.  Click "Start Game" to begin playing!
