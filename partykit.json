@@ -1,0 +1,4 @@
+{
+  "name": "uno-game",
+  "main": "party/game-server.ts"
+}
