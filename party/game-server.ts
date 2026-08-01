@@ -1,5 +1,5 @@
 // party/game-server.ts
-import type * as Party from "partykit/server";
+import { Server, routePartykitRequest, type Connection } from "partyserver";
 import {
   GameState,
   GameAction,
@@ -19,12 +19,22 @@ const DEFAULT_SETTINGS = {
   bonusCards: false,
 };
 
-export default class UnoServer implements Party.Server {
+export class UnoServer extends Server {
+  // 1. Explicitly declare ctx and env to satisfy TypeScript
+  ctx: any;
+  env: any;
+
   gameState: GameState;
 
-  constructor(readonly room: Party.Room) {
+  constructor(ctx: any, env: any) {
+    super(ctx, env);
+
+    // 2. Map them internally
+    this.ctx = ctx;
+    this.env = env;
+
     this.gameState = {
-      roomCode: this.room.id,
+      roomCode: this.name,
       status: "waiting",
       players: [],
       currentTurnIndex: 0,
@@ -33,7 +43,7 @@ export default class UnoServer implements Party.Server {
       activeColor: "red", // Default
       drawPileCount: 99,
       stackedDrawCount: 0,
-      stackedCardType: null, // Initialize new property
+      stackedCardType: null,
       settings: { ...DEFAULT_SETTINGS },
       turnExpiresAt: null,
       bonusGame: null,
@@ -41,15 +51,15 @@ export default class UnoServer implements Party.Server {
   }
 
   async onStart() {
-    const storedSettings = await this.room.storage.get<GameSettings>("settings");
+    const storedSettings = await this.ctx.storage.get("settings");
     if (storedSettings) {
       this.gameState.settings = storedSettings;
     }
   }
 
   getSanitizedState(targetPlayerId: string): ClientGameState {
-    const { turnTimeout, ...restOfState } = this.gameState;
-    const sanitizedPlayers = restOfState.players.map((p) => {
+    const { turnTimeout, ...restOfState } = this.gameState as any;
+    const sanitizedPlayers = restOfState.players.map((p: Player) => {
       const { hand, ...playerData } = p;
       if (p.id === targetPlayerId) {
         return { ...playerData, hand, cardCount: hand.length };
@@ -64,7 +74,7 @@ export default class UnoServer implements Party.Server {
   }
 
   broadcastState() {
-    for (const connection of this.room.getConnections()) {
+    for (const connection of this.getConnections()) {
       const clientState = this.getSanitizedState(connection.id);
       connection.send(
         JSON.stringify({ type: "SYNC_STATE", state: clientState }),
@@ -74,17 +84,19 @@ export default class UnoServer implements Party.Server {
 
   startBonusGame(drawerId: string, requiredDrawCount: number) {
     if (!this.gameState.settings.bonusCards || Math.random() > 0.2) {
-        // if bonus game doesn't start, the player just draws
-        const player = this.gameState.players.find((p) => p.id === drawerId);
-        if (player) {
-            const cardsToDraw = Array.from({ length: requiredDrawCount }, () => drawRandomCard());
-            player.hand.push(...cardsToDraw);
-            this.gameState.stackedDrawCount = 0;
-            this.gameState.stackedCardType = null; // Reset stacked card type
-            this.advanceTurn(1);
-            this.broadcastState();
-        }
-        return;
+      // if bonus game doesn't start, the player just draws
+      const player = this.gameState.players.find((p) => p.id === drawerId);
+      if (player) {
+        const cardsToDraw = Array.from({ length: requiredDrawCount }, () =>
+          drawRandomCard(),
+        );
+        player.hand.push(...cardsToDraw);
+        this.gameState.stackedDrawCount = 0;
+        this.gameState.stackedCardType = null;
+        this.advanceTurn(1);
+        this.broadcastState();
+      }
+      return;
     }
 
     const randomQuestion =
@@ -103,14 +115,14 @@ export default class UnoServer implements Party.Server {
   }
 
   async startTurnTimer() {
-    await this.room.storage.deleteAlarm();
+    await this.ctx.storage.deleteAlarm();
     if (this.gameState.settings.turnTimer > 0) {
       const currentPlayer =
         this.gameState.players[this.gameState.currentTurnIndex];
       if (!currentPlayer) return;
 
       console.log(`Starting timer for ${currentPlayer.name}`);
-      await this.room.storage.setAlarm(
+      await this.ctx.storage.setAlarm(
         Date.now() + this.gameState.settings.turnTimer * 1000,
       );
     }
@@ -138,7 +150,7 @@ export default class UnoServer implements Party.Server {
     if (this.gameState.status === "in_progress") {
       const currentPlayer =
         this.gameState.players[this.gameState.currentTurnIndex];
-      console.log(`Timer expired for ${currentPlayer.name}`);
+      console.log(`Timer expired for ${currentPlayer?.name}`);
       if (currentPlayer) {
         if (this.gameState.settings.bonusCards) {
           this.startBonusGame(currentPlayer.id, 1);
@@ -153,14 +165,14 @@ export default class UnoServer implements Party.Server {
     }
   }
 
-  onConnect(conn: Party.Connection) {
-    console.log(`Player ${conn.id} joined room ${this.room.id}`);
-    const clientState = this.getSanitizedState(conn.id);
-    conn.send(JSON.stringify({ type: "SYNC_STATE", state: clientState }));
+  onConnect(connection: Connection) {
+    console.log(`Player ${connection.id} joined room ${this.name}`);
+    const clientState = this.getSanitizedState(connection.id);
+    connection.send(JSON.stringify({ type: "SYNC_STATE", state: clientState }));
   }
 
-  onClose(conn: Party.Connection) {
-    this.handleLeave(conn.id);
+  onClose(connection: Connection) {
+    this.handleLeave(connection.id);
   }
 
   handleLeave(id: string) {
@@ -179,7 +191,7 @@ export default class UnoServer implements Party.Server {
 
     if (this.gameState.players.length === 0) {
       this.gameState.status = "waiting";
-      this.room.storage.deleteAlarm();
+      this.ctx.storage.deleteAlarm();
     } else {
       // Adjust current turn if the leaving player was before the current one
       if (playerIndex < this.gameState.currentTurnIndex) {
@@ -203,19 +215,19 @@ export default class UnoServer implements Party.Server {
     this.broadcastState();
   }
 
-  onMessage(message: string, sender: Party.Connection) {
+  onMessage(connection: Connection, message: string) {
     const action = JSON.parse(message) as GameAction;
 
     switch (action.type) {
       case "LEAVE_GAME": {
-        sender.close();
+        connection.close();
         break;
       }
 
       case "JOIN_GAME": {
         if (
           this.gameState.status !== "waiting" ||
-          this.gameState.players.some((p) => p.id === sender.id)
+          this.gameState.players.some((p) => p.id === connection.id)
         )
           return;
 
@@ -225,7 +237,7 @@ export default class UnoServer implements Party.Server {
             ...this.gameState.settings,
             ...action.payload.settings,
           };
-          this.room.storage.put("settings", this.gameState.settings);
+          this.ctx.storage.put("settings", this.gameState.settings);
           // Ensure timer is a number, not a string
           if (typeof this.gameState.settings.turnTimer === "string") {
             this.gameState.settings.turnTimer = parseInt(
@@ -236,7 +248,7 @@ export default class UnoServer implements Party.Server {
         }
 
         const player: Player = {
-          id: sender.id,
+          id: connection.id,
           name:
             action.payload?.name ||
             `Player ${this.gameState.players.length + 1}`,
@@ -252,20 +264,24 @@ export default class UnoServer implements Party.Server {
       }
 
       case "UPDATE_SETTINGS": {
-        const player = this.gameState.players.find((p) => p.id === sender.id);
+        const player = this.gameState.players.find(
+          (p) => p.id === connection.id,
+        );
         if (player?.isHost && this.gameState.status === "waiting") {
           this.gameState.settings = {
             ...this.gameState.settings,
             ...action.payload,
           };
-          this.room.storage.put("settings", this.gameState.settings);
+          this.ctx.storage.put("settings", this.gameState.settings);
           this.broadcastState();
         }
         break;
       }
 
       case "CHANGE_NAME": {
-        const player = this.gameState.players.find((p) => p.id === sender.id);
+        const player = this.gameState.players.find(
+          (p) => p.id === connection.id,
+        );
         if (player) {
           player.name = action.payload.name;
           this.broadcastState();
@@ -303,7 +319,7 @@ export default class UnoServer implements Party.Server {
 
       case "PLAY_CARD": {
         const playerIndex = this.gameState.players.findIndex(
-          (p) => p.id === sender.id,
+          (p) => p.id === connection.id,
         );
         if (playerIndex !== this.gameState.currentTurnIndex) return;
 
@@ -311,7 +327,7 @@ export default class UnoServer implements Party.Server {
           (c) => c.id === action.payload.cardId,
         );
 
-        if (!cardInHand) return; // Should not happen
+        if (!cardInHand) return;
 
         if (this.gameState.stackedDrawCount > 0) {
           if (cardInHand.value !== this.gameState.stackedCardType) {
@@ -320,7 +336,7 @@ export default class UnoServer implements Party.Server {
         }
 
         this.handleCardPlay(
-          sender.id,
+          connection.id,
           action.payload.cardId,
           action.payload.selectedColor,
         );
@@ -331,7 +347,7 @@ export default class UnoServer implements Party.Server {
         if (!this.gameState.settings.jumpIn) return;
 
         const playerIndex = this.gameState.players.findIndex(
-          (p) => p.id === sender.id,
+          (p) => p.id === connection.id,
         );
         if (playerIndex === -1) return;
 
@@ -355,14 +371,14 @@ export default class UnoServer implements Party.Server {
           this.gameState.currentTurnIndex = playerIndex;
 
           // handle the card play, which will advance the turn from this new current player
-          this.handleCardPlay(sender.id, action.payload.cardId);
+          this.handleCardPlay(connection.id, action.payload.cardId);
         }
         break;
       }
 
       case "ACCEPT_DRAW_STACK": {
         const playerIndex = this.gameState.players.findIndex(
-          (p) => p.id === sender.id,
+          (p) => p.id === connection.id,
         );
         if (
           playerIndex !== this.gameState.currentTurnIndex ||
@@ -371,9 +387,9 @@ export default class UnoServer implements Party.Server {
           return;
 
         if (this.gameState.settings.bonusCards) {
-          this.startBonusGame(sender.id, this.gameState.stackedDrawCount);
+          this.startBonusGame(connection.id, this.gameState.stackedDrawCount);
           this.gameState.stackedDrawCount = 0;
-          this.gameState.stackedCardType = null; // Reset stacked card type
+          this.gameState.stackedCardType = null;
           return;
         }
 
@@ -385,7 +401,7 @@ export default class UnoServer implements Party.Server {
         player.hand.push(...cardsToDraw);
 
         this.gameState.stackedDrawCount = 0;
-        this.gameState.stackedCardType = null; // Reset stacked card type
+        this.gameState.stackedCardType = null;
         this.advanceTurn(1); // Skip this player's turn
         this.broadcastState();
         break;
@@ -393,12 +409,12 @@ export default class UnoServer implements Party.Server {
 
       case "DRAW_CARD": {
         const playerIndex = this.gameState.players.findIndex(
-          (p) => p.id === sender.id,
+          (p) => p.id === connection.id,
         );
         if (playerIndex !== this.gameState.currentTurnIndex) return;
 
         if (this.gameState.settings.bonusCards) {
-          this.startBonusGame(sender.id, 1);
+          this.startBonusGame(connection.id, 1);
           return;
         }
 
@@ -409,28 +425,32 @@ export default class UnoServer implements Party.Server {
         this.broadcastState();
         break;
       }
+
       case "CALL_UNO": {
-        const player = this.gameState.players.find((p) => p.id === sender.id);
+        const player = this.gameState.players.find(
+          (p) => p.id === connection.id,
+        );
         if (player) {
           player.hasCalledUno = true;
           this.broadcastState();
         }
         break;
       }
+
       case "SUBMIT_BONUS_ANSWER": {
         if (
           this.gameState.status !== "bonus_round" ||
           !this.gameState.bonusGame ||
-          sender.id === this.gameState.bonusGame.drawerId
+          connection.id === this.gameState.bonusGame.drawerId
         ) {
           return;
         }
 
         this.gameState.bonusGame.answers.push({
           answer: action.payload.answer,
-          authorId: sender.id,
+          authorId: connection.id,
         });
-        this.gameState.bonusGame.submittedAnswers.push(sender.id);
+        this.gameState.bonusGame.submittedAnswers.push(connection.id);
 
         const otherPlayers = this.gameState.players.filter(
           (p) => p.id !== this.gameState.bonusGame?.drawerId,
@@ -447,11 +467,12 @@ export default class UnoServer implements Party.Server {
         this.broadcastState();
         break;
       }
+
       case "CHOOSE_BONUS_ANSWER": {
         if (
           this.gameState.status !== "bonus_round" ||
           !this.gameState.bonusGame ||
-          sender.id !== this.gameState.bonusGame.drawerId
+          connection.id !== this.gameState.bonusGame.drawerId
         ) {
           return;
         }
@@ -473,9 +494,7 @@ export default class UnoServer implements Party.Server {
             drawer.hand.push(...cardsToDraw);
           }
 
-          const author = this.gameState.players.find(
-            (p) => p.id === authorId,
-          );
+          const author = this.gameState.players.find((p) => p.id === authorId);
           if (author && author.hand.length > 0) {
             const cardToRemoveIndex = Math.floor(
               Math.random() * author.hand.length,
@@ -485,7 +504,7 @@ export default class UnoServer implements Party.Server {
               this.gameState.status = "round_over";
               this.gameState.winnerId = author.id;
               author.wins++;
-              this.room.storage.setAlarm(Date.now() + 5000);
+              this.ctx.storage.setAlarm(Date.now() + 5000);
             }
           }
         }
@@ -498,6 +517,7 @@ export default class UnoServer implements Party.Server {
         this.broadcastState();
         break;
       }
+
       case "RESET_GAME": {
         this.resetGame();
         break;
@@ -558,7 +578,7 @@ export default class UnoServer implements Party.Server {
       this.gameState.status = "round_over";
       this.gameState.winnerId = player.id;
       player.wins++;
-      this.room.storage.setAlarm(Date.now() + 5000); // 5 seconds to show winner
+      this.ctx.storage.setAlarm(Date.now() + 5000); // 5 seconds to show winner
     } else {
       this.advanceTurn(skipNext ? 2 : 1);
     }
@@ -570,7 +590,7 @@ export default class UnoServer implements Party.Server {
     this.gameState.status = "waiting";
     this.gameState.topCard = null;
     this.gameState.stackedDrawCount = 0;
-    this.gameState.stackedCardType = null; // Reset stacked card type
+    this.gameState.stackedCardType = null;
     this.gameState.winnerId = undefined;
     this.gameState.bonusGame = null;
     this.gameState.direction = "clockwise";
@@ -586,13 +606,10 @@ export default class UnoServer implements Party.Server {
     let currentIndex = array.length,
       randomIndex;
 
-    // While there remain elements to shuffle.
     while (currentIndex != 0) {
-      // Pick a remaining element.
       randomIndex = Math.floor(Math.random() * currentIndex);
       currentIndex--;
 
-      // And swap it with the current element.
       [array[currentIndex], array[randomIndex]] = [
         array[randomIndex],
         array[currentIndex],
@@ -602,3 +619,25 @@ export default class UnoServer implements Party.Server {
     return array;
   }
 }
+
+export default {
+  async fetch(request: Request, env: any, ctx: any) {
+    console.log("Worker received request:", request.url);
+    console.log("Type of env:", typeof env);
+    console.log("Is env null or undefined?", env === null || env === undefined);
+    // Stringify env to see its full content, if it's an object
+    console.log("Worker env object (JSON.stringify):", JSON.stringify(env));
+    console.log("Worker env object keys:", Object.keys(env));
+    if (env.unoServer) {
+      console.log("env.unoServer Durable Object binding found!");
+    } else {
+      console.error("env.unoServer Durable Object binding NOT found.");
+    }
+    return (
+      (await routePartykitRequest(request, env, {
+        // Explicitly pass the servers map
+        // unoServer: UnoServer, // Explicitly tell partyserver about the UnoServer class
+      })) || new Response("Not found", { status: 404 })
+    );
+  },
+};

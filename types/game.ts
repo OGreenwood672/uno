@@ -55,7 +55,12 @@ export interface Player {
 // 3. GAME STATE (SERVER -> CLIENT)
 // ==========================================
 
-export type GameStatus = "waiting" | "in_progress" | "round_over" | "game_over" | "bonus_round";
+export type GameStatus =
+  | "waiting"
+  | "in_progress"
+  | "round_over"
+  | "game_over"
+  | "bonus_round";
 export type TurnDirection = "clockwise" | "counterclockwise";
 
 export interface BonusGame {
@@ -101,7 +106,6 @@ export interface GameState {
 
   /** Player ID of the round or game winner */
   winnerId?: string;
-  turnTimeout?: ReturnType<typeof setTimeout>;
   turnExpiresAt: number | null;
   bonusGame: BonusGame | null;
 }
@@ -115,8 +119,7 @@ export type ClientPlayer = Omit<Player, "hand"> & {
  * A sanitized version of the game state sent to a specific client.
  * Hides other players' actual cards to prevent cheating via browser devtools.
  */
-export interface ClientGameState
-  extends Omit<GameState, "players" | "turnTimeout"> {
+export interface ClientGameState extends Omit<GameState, "players"> {
   players: ClientPlayer[];
 }
 

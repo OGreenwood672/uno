@@ -39,6 +39,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
 
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "localhost:1999",
+    // party: "unoServer",
     room: roomId,
     onMessage(event) {
       const data = JSON.parse(event.data);
@@ -385,8 +386,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
                       Jump-In Rule: {gameState.settings.jumpIn ? "On" : "Off"}
                     </li>
                     <li>
-                      Jack's Box:{" "}
-                      {gameState.settings.bonusCards ? "On" : "Off"}
+                      Jack's Box: {gameState.settings.bonusCards ? "On" : "Off"}
                     </li>
                   </ul>
                 </div>
@@ -461,7 +461,9 @@ export default function GameClient({ roomId }: { roomId: string }) {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[var(--color-background)] transition-colors duration-300">
-      {gameState.status === "round_over" && <WinnerDisplay gameState={gameState} />}
+      {gameState.status === "round_over" && (
+        <WinnerDisplay gameState={gameState} />
+      )}
       <header className="absolute top-0 left-0 z-40 flex w-full items-center justify-between p-4">
         <div className="text-xl font-black tracking-wider shadow-sm text-[var(--color-brand)]">
           UNO ROOM: {roomId}
@@ -637,7 +639,9 @@ export default function GameClient({ roomId }: { roomId: string }) {
               hand={sortedHand}
               onCardPlay={handlePlayCard}
               onJumpIn={handleJumpIn}
-              onCallUno={() => socket.send(JSON.stringify({ type: "CALL_UNO" }))}
+              onCallUno={() =>
+                socket.send(JSON.stringify({ type: "CALL_UNO" }))
+              }
               isMyTurn={isMyTurn}
               gameState={gameState}
             />

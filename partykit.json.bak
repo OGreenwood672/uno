@@ -1,0 +1,5 @@
+{
+  "name": "uno-game",
+  "main": "party/game-server.ts",
+  "compatibilityDate": "2026-08-01"
+}

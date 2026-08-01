@@ -1,0 +1,21 @@
+name = "uno-game"
+main = "party/game-server.ts"
+compatibility_date = "2026-08-01"
+
+routes = [
+  { pattern = "party.ogwood.dev", custom_domain = true }
+]
+
+[observability]
+enabled = true
+
+[observability.traces]
+enabled = true
+
+[[durable_objects.bindings]]
+name = "main"
+class_name = "UnoServer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UnoServer"]
