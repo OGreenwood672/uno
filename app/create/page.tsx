@@ -15,7 +15,6 @@ export default function CreateRoomPage() {
   const [jumpIn, setJumpIn] = useState(true);
   // Bonus cards can be a more complex object if needed
   const [bonusCards, setBonusCards] = useState(false);
-  const [bonusCards, setBonusCards] = useState(false);
   const [rotate, setRotate] = useState(false);
 
   const handleCreateRoom = () => {
@@ -32,7 +31,6 @@ export default function CreateRoomPage() {
     });
 
     router.push(`/play/${newRoomId}?${settings.toString()}`);
-  };
   };
 
   return (
@@ -54,7 +52,9 @@ export default function CreateRoomPage() {
           </div>
 
           <div>
-            <label className="block mb-2 text-lg font-bold">Starting Cards</label>
+            <label className="block mb-2 text-lg font-bold">
+              Starting Cards
+            </label>
             <input
               type="number"
               value={startCards}
@@ -66,7 +66,9 @@ export default function CreateRoomPage() {
           </div>
 
           <div>
-            <label className="block mb-2 text-lg font-bold">Timer per Turn (0 for none)</label>
+            <label className="block mb-2 text-lg font-bold">
+              Timer per Turn (0 for none)
+            </label>
             <input
               type="number"
               value={turnTimer}
@@ -81,7 +83,11 @@ export default function CreateRoomPage() {
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold">"Jump-In" Rule</span>
             <label className="switch">
-              <input type="checkbox" checked={jumpIn} onChange={(e) => setJumpIn(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={jumpIn}
+                onChange={(e) => setJumpIn(e.target.checked)}
+              />
               <span className="slider round"></span>
             </label>
           </div>
@@ -89,7 +95,11 @@ export default function CreateRoomPage() {
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold">Bonus Cards</span>
             <label className="switch">
-              <input type="checkbox" checked={bonusCards} onChange={(e) => setBonusCards(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={bonusCards}
+                onChange={(e) => setBonusCards(e.target.checked)}
+              />
               <span className="slider round"></span>
             </label>
           </div>
@@ -97,26 +107,30 @@ export default function CreateRoomPage() {
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold">Rotate Mode</span>
             <label className="switch">
-              <input type="checkbox" checked={rotate} onChange={(e) => setRotate(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={rotate}
+                onChange={(e) => setRotate(e.target.checked)}
+              />
               <span className="slider round"></span>
             </label>
           </div>
         </div>
 
         <div className="flex gap-4 pt-4">
-            <button
-              onClick={() => router.push('/')}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleCreateRoom}
-              disabled={!playerName.trim()}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 disabled:opacity-50"
-            >
-              Create and Play
-            </button>
+          <button
+            onClick={() => router.push("/")}
+            className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300"
+          >
+            Back
+          </button>
+          <button
+            onClick={handleCreateRoom}
+            disabled={!playerName.trim()}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 disabled:opacity-50"
+          >
+            Create and Play
+          </button>
         </div>
       </div>
       <style jsx>{`
@@ -139,7 +153,7 @@ export default function CreateRoomPage() {
           right: 0;
           bottom: 0;
           background-color: #ccc;
-          transition: .4s;
+          transition: 0.4s;
         }
         .slider:before {
           position: absolute;
@@ -149,10 +163,10 @@ export default function CreateRoomPage() {
           left: 4px;
           bottom: 4px;
           background-color: white;
-          transition: .4s;
+          transition: 0.4s;
         }
         input:checked + .slider {
-          background-color: #2196F3;
+          background-color: #2196f3;
         }
         input:checked + .slider:before {
           transform: translateX(26px);

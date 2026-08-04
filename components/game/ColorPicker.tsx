@@ -1,21 +1,20 @@
 "use client";
 
-import { CardColor } from "@/types/game";
+import { CardColorChoice } from "@/types/game";
 import { motion } from "framer-motion";
 
 interface ColorPickerProps {
-  onColorSelect: (color: CardColor) => void;
+  onColorSelect: (color: CardColorChoice) => void;
   onCancel: () => void;
 }
 
-const colors: CardColor[] = ["red", "green", "blue", "yellow"];
+const colors: CardColorChoice[] = ["red", "green", "blue", "yellow"];
 
-const colorClasses = {
+const colorClasses: Record<CardColorChoice, string> = {
   red: "bg-red-500 hover:bg-red-600",
   green: "bg-green-500 hover:bg-green-600",
   blue: "bg-blue-500 hover:bg-blue-600",
   yellow: "bg-yellow-500 hover:bg-yellow-600",
-  wild: "", // wild should not be an option here
 };
 
 export default function ColorPicker({ onColorSelect, onCancel }: ColorPickerProps) {

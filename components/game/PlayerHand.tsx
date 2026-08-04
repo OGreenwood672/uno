@@ -1,6 +1,6 @@
 "use client";
 
-import { UnoCard, ClientGameState, CardColor } from "@/types/game";
+import { UnoCard, ClientGameState, CardColorChoice } from "@/types/game";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import Card from "./Card";
@@ -8,7 +8,7 @@ import ColorPicker from "./ColorPicker";
 
 interface PlayerHandProps {
   hand: UnoCard[];
-  onCardPlay: (cardId: string, selectedColor?: any) => void;
+  onCardPlay: (cardId: string, selectedColor?: CardColorChoice) => void;
   onJumpIn: (cardId:string) => void;
   onCallUno: () => void;
   isMyTurn: boolean;
@@ -18,6 +18,7 @@ interface PlayerHandProps {
 
 export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMyTurn, gameState, viewportSize }: PlayerHandProps) {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [pendingWildCard, setPendingWildCard] = useState<UnoCard | null>(null);
   
   if (!gameState) {
     return null;
@@ -53,6 +54,13 @@ export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMy
   const activeCardIndex = activeCardId
     ? hand.findIndex((c) => c.id === activeCardId)
     : -1;
+
+  const handleWildColorSelect = (color: CardColorChoice) => {
+    if (pendingWildCard) {
+      onCardPlay(pendingWildCard.id, color);
+      setPendingWildCard(null);
+    }
+  };
 
   return (
     <>
@@ -215,6 +223,7 @@ export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMy
             }
           }
         `}</style>
+      </motion.div>
     </>
   );
 }
