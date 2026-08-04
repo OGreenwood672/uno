@@ -4,7 +4,8 @@
 // 1. CARD DEFINITIONS
 // ==========================================
 
-export type CardColor = "red" | "yellow" | "green" | "blue" | "wild";
+export type CardColorChoice = "red" | "yellow" | "green" | "blue";
+export type CardColor = CardColorChoice | "wild";
 
 export type CardValue =
   | "0"
@@ -49,6 +50,8 @@ export interface Player {
   wins: number;
   /** Optional avatar or customized deck skin per player */
   preferredTheme?: ThemeName;
+  /** Indicates the player has drawn a card and can play it or skip */
+  hasDrawnCard?: boolean;
 }
 
 // ==========================================
@@ -74,6 +77,11 @@ export interface BonusGame {
   requiredDrawCount: number;
   // player ids that have submitted answers
   submittedAnswers: string[];
+  chosenAnswer?: {
+    answer: string;
+    authorId: string;
+  };
+  isCorrect?: boolean;
 }
 
 export interface GameSettings {
@@ -81,6 +89,7 @@ export interface GameSettings {
   turnTimer: number;
   jumpIn: boolean;
   bonusCards: boolean;
+  rotate: boolean;
 }
 
 export interface GameState {
@@ -95,7 +104,7 @@ export interface GameState {
   /** The top card currently visible on the table */
   topCard: UnoCard | null;
   /** The active color (important when a Wild card is played and color changes) */
-  activeColor: CardColor;
+  activeColor: CardColorChoice;
 
   /** Remaining cards in the draw pile (send count only to clients to prevent cheating) */
   drawPileCount: number;
@@ -108,6 +117,7 @@ export interface GameState {
   winnerId?: string;
   turnExpiresAt: number | null;
   bonusGame: BonusGame | null;
+  playerChoosingSwapId?: string;
 }
 
 export type ClientPlayer = Omit<Player, "hand"> & {
@@ -144,9 +154,18 @@ export type GameAction =
       payload: {
         cardId: string;
         /** Required if playing a Wild or Wild Draw 4 card */
-        selectedColor?: CardColor;
+        selectedColor?: CardColorChoice;
       };
     }
+    | {
+      type: "PLAY_DRAWN_CARD";
+      payload: {
+        cardId: string;
+        /** Required if playing a Wild or Wild Draw 4 card */
+        selectedColor?: CardColorChoice;
+      };
+    }
+  | { type: "SKIP_TURN"}
   | {
       type: "JUMP_IN";
       payload: {
@@ -164,6 +183,7 @@ export type GameAction =
       type: "CHOOSE_BONUS_ANSWER";
       payload: { answer: string; authorId: string };
     }
+  | { type: "SWAP_HAND"; payload: { targetPlayerId: string } }
   | { type: "RESET_GAME" };
 
 // ==========================================

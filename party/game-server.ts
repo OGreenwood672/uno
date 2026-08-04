@@ -8,6 +8,7 @@ import {
   UnoCard,
   BonusGame,
   GameSettings,
+  CardColorChoice,
 } from "../types/game";
 import { drawRandomCard } from "@/utils/deck";
 import { questions } from "@/utils/questions";
@@ -17,6 +18,7 @@ const DEFAULT_SETTINGS = {
   turnTimer: 30, // 30 seconds, 0 to disable
   jumpIn: true,
   bonusCards: false,
+  rotate: false,
 };
 
 export class UnoServer extends Server {
@@ -47,6 +49,7 @@ export class UnoServer extends Server {
       settings: { ...DEFAULT_SETTINGS },
       turnExpiresAt: null,
       bonusGame: null,
+      playerChoosingSwapId: undefined,
     };
   }
 
@@ -147,6 +150,16 @@ export class UnoServer extends Server {
   }
 
   onAlarm() {
+    if (this.gameState.bonusGame?.chosenAnswer) {
+      if (this.gameState.status !== "round_over") {
+        this.gameState.status = "in_progress";
+        this.gameState.bonusGame = null;
+        this.advanceTurn(1); // Turn moves to the next player
+      }
+      this.broadcastState();
+      return;
+    }
+
     if (this.gameState.status === "in_progress") {
       const currentPlayer =
         this.gameState.players[this.gameState.currentTurnIndex];
@@ -257,6 +270,7 @@ export class UnoServer extends Server {
           isHost: isHost,
           hasCalledUno: false,
           wins: 0,
+          hasDrawnCard: false,
         };
         this.gameState.players.push(player);
         this.broadcastState();
@@ -419,8 +433,39 @@ export class UnoServer extends Server {
         }
 
         const player = this.gameState.players[playerIndex];
-        player.hand.push(drawRandomCard());
+        const newCard = drawRandomCard();
+        player.hand.push(newCard);
+        player.hasDrawnCard = true;
+        this.broadcastState();
+        break;
+      }
 
+      case "PLAY_DRAWN_CARD": {
+        const playerIndex = this.gameState.players.findIndex(
+          (p) => p.id === connection.id,
+        );
+        if (playerIndex !== this.gameState.currentTurnIndex) return;
+
+        const player = this.gameState.players[playerIndex];
+        if (!player.hasDrawnCard) return;
+
+        player.hasDrawnCard = false;
+        this.handleCardPlay(
+          connection.id,
+          action.payload.cardId,
+          action.payload.selectedColor,
+        );
+        break;
+      }
+
+      case "SKIP_TURN": {
+        const playerIndex = this.gameState.players.findIndex(
+          (p) => p.id === connection.id,
+        );
+        if (playerIndex !== this.gameState.currentTurnIndex) return;
+
+        const player = this.gameState.players[playerIndex];
+        player.hasDrawnCard = false;
         this.advanceTurn(1);
         this.broadcastState();
         break;
@@ -430,9 +475,16 @@ export class UnoServer extends Server {
         const player = this.gameState.players.find(
           (p) => p.id === connection.id,
         );
-        if (player) {
+        if (player && !player.hasCalledUno) {
           player.hasCalledUno = true;
           this.broadcastState();
+          this.broadcast(
+            JSON.stringify({
+              type: "ANNOUNCEMENT",
+              message: `${player.name} has called UNO!`,
+              variant: "uno_call",
+            }),
+          );
         }
         break;
       }
@@ -477,14 +529,18 @@ export class UnoServer extends Server {
           return;
         }
 
-        const { authorId } = action.payload;
+        const bonusGame = this.gameState.bonusGame;
+        const { authorId, answer } = action.payload;
         const drawer = this.gameState.players.find(
-          (p) => p.id === this.gameState.bonusGame?.drawerId,
+          (p) => p.id === bonusGame.drawerId,
         );
 
+        bonusGame.chosenAnswer = { authorId, answer };
+
         if (authorId === "real") {
-          // Correct answer! Nothing happens to the drawer
+          bonusGame.isCorrect = true;
         } else {
+          bonusGame.isCorrect = false;
           // Incorrect answer
           if (drawer) {
             const cardsToDraw = Array.from(
@@ -504,16 +560,38 @@ export class UnoServer extends Server {
               this.gameState.status = "round_over";
               this.gameState.winnerId = author.id;
               author.wins++;
-              this.ctx.storage.setAlarm(Date.now() + 5000);
             }
           }
         }
+        this.broadcastState();
 
-        if (this.gameState.status !== "round_over") {
-          this.gameState.status = "in_progress";
-          this.gameState.bonusGame = null;
-          this.advanceTurn(1); // Turn moves to the next player
+        // After 3 seconds, reset bonus game and advance turn
+        this.ctx.storage.setAlarm(Date.now() + 3000);
+
+        break;
+      }
+
+      case "SWAP_HAND": {
+        if (
+          !this.gameState.settings.rotate ||
+          !this.gameState.playerChoosingSwapId
+        )
+          return;
+        const choosingPlayer = this.gameState.players.find(
+          (p) => p.id === this.gameState.playerChoosingSwapId,
+        );
+        const targetPlayer = this.gameState.players.find(
+          (p) => p.id === action.payload.targetPlayerId,
+        );
+
+        if (choosingPlayer && targetPlayer) {
+          const tempHand = choosingPlayer.hand;
+          choosingPlayer.hand = targetPlayer.hand;
+          targetPlayer.hand = tempHand;
         }
+
+        this.gameState.playerChoosingSwapId = undefined;
+        this.advanceTurn(1);
         this.broadcastState();
         break;
       }
@@ -528,7 +606,7 @@ export class UnoServer extends Server {
   handleCardPlay(
     playerId: string,
     cardId: string,
-    selectedColor?: "red" | "yellow" | "green" | "blue" | "wild",
+    selectedColor?: CardColorChoice,
   ) {
     const playerIndex = this.gameState.players.findIndex(
       (p) => p.id === playerId,
@@ -548,7 +626,7 @@ export class UnoServer extends Server {
     this.gameState.topCard = playedCard;
     this.gameState.activeColor = isWild
       ? selectedColor || "red"
-      : playedCard.color;
+      : (playedCard.color as CardColorChoice);
 
     let skipNext = false;
     if (playedCard.value === "reverse") {
@@ -565,6 +643,24 @@ export class UnoServer extends Server {
     } else if (playedCard.value === "wild_draw4") {
       this.gameState.stackedDrawCount += 4;
       this.gameState.stackedCardType = "wild_draw4";
+    }
+
+    if (this.gameState.settings.rotate) {
+      if (playedCard.value === "0") {
+        const hands = this.gameState.players.map((p) => p.hand);
+        if (this.gameState.direction === "clockwise") {
+          const lastHand = hands.pop();
+          if (lastHand) hands.unshift(lastHand);
+        } else {
+          const firstHand = hands.shift();
+          if (firstHand) hands.push(firstHand);
+        }
+        this.gameState.players.forEach((p, i) => (p.hand = hands[i]));
+      } else if (playedCard.value === "7") {
+        this.gameState.playerChoosingSwapId = player.id;
+        this.broadcastState();
+        return; // Don't advance turn yet
+      }
     }
 
     if (player.hand.length === 1 && !player.hasCalledUno) {
@@ -594,10 +690,12 @@ export class UnoServer extends Server {
     this.gameState.winnerId = undefined;
     this.gameState.bonusGame = null;
     this.gameState.direction = "clockwise";
+    this.gameState.playerChoosingSwapId = undefined;
     this.gameState.players.forEach((p) => {
       p.hand = [];
       p.isReady = false;
       p.hasCalledUno = false;
+      p.hasDrawnCard = false;
     });
     this.broadcastState();
   }

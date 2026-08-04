@@ -11,11 +11,13 @@ import {
 } from "../../../types/game";
 import Card from "../../../components/game/Card";
 import { AnimatePresence, motion } from "framer-motion";
-import PlayerHand from "../../../components/game/PlayerHand";
 import LobbySettings from "@/components/game/LobbySettings";
 import TurnTimer from "@/components/game/TurnTimer";
 import BonusGame from "@/components/game/BonusGame";
 import WinnerDisplay from "@/components/game/WinnerDisplay";
+import ColorPicker from "@/components/game/ColorPicker";
+import CardTable from "@/components/game/CardTable";
+import { ServerMessage, UnoCard } from "@/types/game";
 
 type SortStrategy = "color" | "number";
 
@@ -29,6 +31,10 @@ export default function GameClient({ roomId }: { roomId: string }) {
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(0);
+  const [isLinkCopied, setIsLinkCopied] = useState(false);
+  const [announcement, setAnnouncement] = useState<ServerMessage | null>(null);
+  const [pendingDrawnWildCard, setPendingDrawnWildCard] = useState<UnoCard | null>(null);
+  const [pendingWildCard, setPendingWildCard] = useState<UnoCard | null>(null);
   const [viewportSize, setViewportSize] = useState({
     width: 1200,
     height: 800,
@@ -45,6 +51,8 @@ export default function GameClient({ roomId }: { roomId: string }) {
       const data = JSON.parse(event.data);
       if (data.type === "SYNC_STATE") {
         setGameState(data.state);
+      } else if (data.type === "ANNOUNCEMENT") {
+        setAnnouncement(data);
       }
     },
   });
@@ -56,6 +64,15 @@ export default function GameClient({ roomId }: { roomId: string }) {
     [gameState, socket.id],
   );
 
+  useEffect(() => {
+    if (announcement) {
+      const timer = setTimeout(() => {
+        setAnnouncement(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [announcement]);
+  
   useEffect(() => {
     if (localPlayer) {
       setNewPlayerName(localPlayer.name);
@@ -69,6 +86,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
       turnTimer: parseInt(searchParams.get("timer") || "0", 10),
       jumpIn: searchParams.get("jumpIn") === "true",
       bonusCards: searchParams.get("bonus") === "true",
+      rotate: searchParams.get("rotate") === "true",
     };
   };
 
@@ -149,12 +167,17 @@ export default function GameClient({ roomId }: { roomId: string }) {
   }, [localPlayer?.hand, sortStrategy]);
 
   const handlePlayCard = (cardId: string, selectedColor?: string) => {
-    socket.send(
-      JSON.stringify({
-        type: "PLAY_CARD",
-        payload: { cardId, selectedColor },
-      }),
-    );
+    const card = localPlayer?.hand?.find(c => c.id === cardId);
+    if(card?.color === 'wild') {
+      setPendingWildCard(card);
+    } else {
+      socket.send(
+        JSON.stringify({
+          type: "PLAY_CARD",
+          payload: { cardId, selectedColor },
+        }),
+      );
+    }
   };
 
   const handleJumpIn = (cardId: string) => {
@@ -169,6 +192,14 @@ export default function GameClient({ roomId }: { roomId: string }) {
   const handleLeaveGame = () => {
     socket.send(JSON.stringify({ type: "LEAVE_GAME" }));
     router.push("/");
+  };
+
+  const handleCopyLink = () => {
+    const url = window.location.href.split("?")[0];
+    navigator.clipboard.writeText(url).then(() => {
+      setIsLinkCopied(true);
+      setTimeout(() => setIsLinkCopied(false), 2000);
+    });
   };
 
   const joinGame = () => {
@@ -242,10 +273,12 @@ export default function GameClient({ roomId }: { roomId: string }) {
     const cardCount = player.cardCount ?? 0;
     const maxVisibleCards = 10;
 
+    const isChoosingSwap = gameState.playerChoosingSwapId === player.id;
+
     return (
       <motion.div
         key={player.id}
-        className="absolute"
+        className={`absolute ${isChoosingSwap ? 'cursor-pointer' : ''}`}
         initial={{ x: 0, y: 0, scale: 0 }}
         animate={{
           x,
@@ -258,6 +291,16 @@ export default function GameClient({ roomId }: { roomId: string }) {
             ? "drop-shadow(0 0 20px rgba(255, 255, 0, 0.9))"
             : "none",
           transition: "filter 0.3s ease-in-out",
+        }}
+        onClick={() => {
+          if (isChoosingSwap) {
+            socket.send(
+              JSON.stringify({
+                type: "SWAP_HAND",
+                payload: { targetPlayerId: player.id },
+              }),
+            );
+          }
         }}
       >
         <div className="flex flex-col items-center gap-2">
@@ -273,29 +316,6 @@ export default function GameClient({ roomId }: { roomId: string }) {
               />
             )}
           </div>
-          {cardCount > 0 && (
-            <div className="flex -space-x-16 scale-75">
-              <AnimatePresence>
-                {Array.from({
-                  length: Math.min(cardCount, maxVisibleCards),
-                }).map((_, i) => (
-                  <Card
-                    key={`${player.id}-card-${i}`}
-                    hidden
-                    initial={{ opacity: 0, y: -50 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.5 }}
-                    transition={{ duration: 0.3, delay: i * 0.05 }}
-                  />
-                ))}
-              </AnimatePresence>
-              {cardCount > maxVisibleCards && (
-                <div className="ml-2 mt-2 font-bold text-white">
-                  +{cardCount - maxVisibleCards}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </motion.div>
     );
@@ -313,7 +333,17 @@ export default function GameClient({ roomId }: { roomId: string }) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-900 text-white">
         <h1 className="text-5xl font-bold mb-4">Room: {roomId}</h1>
-        <p className="text-xl mb-8">Waiting for players to join...</p>
+        <div className="flex items-center gap-4 mb-8">
+          <p className="text-xl">Waiting for players to join...</p>
+          {localPlayer?.isHost && (
+            <button
+              onClick={handleCopyLink}
+              className="px-4 py-2 bg-blue-600/80 text-white font-bold rounded-lg shadow-lg backdrop-blur-md hover:bg-blue-700"
+            >
+              {isLinkCopied ? "Link Copied!" : "Copy Link"}
+            </button>
+          )}
+        </div>
         <div className="mt-8">
           {!localPlayer && !searchParams.get("name") && (
             <div className="flex flex-col gap-2">
@@ -367,6 +397,9 @@ export default function GameClient({ roomId }: { roomId: string }) {
                       <li>
                         Jack's Box:{" "}
                         {gameState.settings.bonusCards ? "On" : "Off"}
+                      </li>
+                      <li>
+                        Rotate Mode: {gameState.settings.rotate ? "On" : "Off"}
                       </li>
                     </ul>
                   </div>
@@ -461,6 +494,19 @@ export default function GameClient({ roomId }: { roomId: string }) {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[var(--color-background)] transition-colors duration-300">
+      <AnimatePresence>
+        {announcement && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="absolute top-20 z-50 bg-yellow-400 text-black font-bold py-2 px-6 rounded-lg shadow-lg"
+          >
+            {announcement.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {gameState.status === "round_over" && (
         <WinnerDisplay gameState={gameState} />
       )}
@@ -482,7 +528,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
             onClick={handleLeaveGame}
             className="px-4 py-2 bg-red-600/80 text-white font-bold rounded-lg shadow-lg backdrop-blur-md hover:bg-red-700"
           >
-            Leave Game
+            Rage Quit
           </button>
         </div>
       </header>
@@ -494,6 +540,12 @@ export default function GameClient({ roomId }: { roomId: string }) {
             duration={gameState.settings.turnTimer}
             size="large"
           />
+        </div>
+      )}
+
+      {gameState.playerChoosingSwapId === localPlayer?.id && (
+        <div className="absolute top-1/2 -translate-y-1/2 z-50 bg-blue-600 text-white p-4 rounded-lg shadow-lg">
+          <h2 className="text-2xl font-bold">Choose a player to swap hands with!</h2>
         </div>
       )}
 
@@ -521,6 +573,8 @@ export default function GameClient({ roomId }: { roomId: string }) {
       <div className="absolute flex h-full w-full items-center justify-center">
         {opponents.map((p, i) => renderPlayer(p, i, opponents.length))}
       </div>
+
+      <CardTable gameState={gameState} localPlayerId={socket.id} />
 
       <div className="z-10 flex flex-col items-center justify-center gap-6">
         <div className="flex items-center justify-center gap-4">
@@ -624,6 +678,32 @@ export default function GameClient({ roomId }: { roomId: string }) {
         </div>
       )}
 
+      <AnimatePresence>
+        {localPlayer && localPlayer.hand && localPlayer.hand.length === 2 && isMyTurn && (
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{
+              scale: 1,
+              opacity: 1,
+              transition: { delay: 0.5, type: "spring" },
+            }}
+            exit={{ scale: 0, opacity: 0 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => socket.send(JSON.stringify({ type: "CALL_UNO" }))}
+            className={`absolute bottom-40 font-bold py-4 px-6 rounded-full text-2xl shadow-lg ${
+              localPlayer.hasCalledUno
+                ? "bg-green-500 text-white cursor-not-allowed"
+                : "bg-red-600 text-white animate-pulse"
+            }`}
+            disabled={localPlayer.hasCalledUno}
+            style={{ left: "50%", transform: "translateX(-50%)" }}
+          >
+            {localPlayer.hasCalledUno ? "UNO CALLED!" : "CALL UNO!"}
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       <div
         className="pointer-events-none absolute bottom-0 left-0 z-20 flex w-full flex-col items-center pb-8"
         style={{
@@ -633,20 +713,67 @@ export default function GameClient({ roomId }: { roomId: string }) {
           transition: "filter 0.5s ease-in-out",
         }}
       >
-        {localPlayer?.hand && (
-          <div className="pointer-events-auto">
-            <PlayerHand
-              hand={sortedHand}
-              onCardPlay={handlePlayCard}
-              onJumpIn={handleJumpIn}
-              onCallUno={() =>
-                socket.send(JSON.stringify({ type: "CALL_UNO" }))
-              }
-              isMyTurn={isMyTurn}
-              gameState={gameState}
+        <AnimatePresence>
+          {pendingWildCard && (
+            <ColorPicker
+              onColorSelect={(color) => {
+                handlePlayCard(pendingWildCard.id, color);
+                setPendingWildCard(null);
+              }}
+              onCancel={() => setPendingWildCard(null)}
             />
-          </div>
-        )}
+          )}
+          {pendingDrawnWildCard && (
+            <ColorPicker
+              onColorSelect={(color) => {
+                socket.send(
+                  JSON.stringify({
+                    type: "PLAY_DRAWN_CARD",
+                    payload: { cardId: pendingDrawnWildCard.id, selectedColor: color },
+                  }),
+                );
+                setPendingDrawnWildCard(null);
+              }}
+              onCancel={() => setPendingDrawnWildCard(null)}
+            />
+          )}
+        </AnimatePresence>
+        {localPlayer?.hasDrawnCard && isMyTurn && (() => {
+          const drawnCard = localPlayer.hand[localPlayer.hand.length - 1];
+          const canPlayDrawnCard =
+            drawnCard.color === "wild" ||
+            drawnCard.color === gameState.activeColor ||
+            drawnCard.value === gameState.topCard?.value;
+
+          return (
+            <div className="flex gap-4 mt-4">
+              <button
+                onClick={() => {
+                  if (drawnCard.color === "wild") {
+                    setPendingDrawnWildCard(drawnCard);
+                  } else {
+                    socket.send(
+                      JSON.stringify({
+                        type: "PLAY_DRAWN_CARD",
+                        payload: { cardId: drawnCard.id },
+                      }),
+                    );
+                  }
+                }}
+                disabled={!canPlayDrawnCard}
+                className="px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-lg disabled:bg-gray-500"
+              >
+                Play Card
+              </button>
+              <button
+                onClick={() => socket.send(JSON.stringify({ type: "SKIP_TURN" }))}
+                className="px-6 py-3 bg-yellow-500 text-black font-bold rounded-lg shadow-lg"
+              >
+                Skip
+              </button>
+            </div>
+          );
+        })()}
       </div>
       {gameState.status === "bonus_round" && localPlayer && (
         <BonusGame

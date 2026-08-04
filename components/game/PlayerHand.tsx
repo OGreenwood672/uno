@@ -13,27 +13,33 @@ interface PlayerHandProps {
   onCallUno: () => void;
   isMyTurn: boolean;
   gameState: ClientGameState;
+  viewportSize: { width: number; height: number };
 }
 
-export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMyTurn, gameState }: PlayerHandProps) {
+export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMyTurn, gameState, viewportSize }: PlayerHandProps) {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
-  const [pendingWildCard, setPendingWildCard] = useState<UnoCard | null>(null);
-  const [hasCalledUno, setHasCalledUno] = useState(false);
-
+  
   if (!gameState) {
     return null;
   }
-  const showUnoButton = hand.length === 2 && isMyTurn;
-
-  const handleCallUno = () => {
-    setHasCalledUno(true);
-    onCallUno();
-  };
+  const localPlayer = gameState.players.find(p => p.hand);
   
   const cardWidth = 128; // w-32 in Tailwind
-  const cardOverlap = 80; // How much cards overlap
-  const totalWidth = hand.length * (cardWidth - cardOverlap) + cardOverlap;
+  
+  const handSize = hand.length;
+  const maxHandWidth = viewportSize.width * 0.8;
+  
+  let cardOverlap = 80;
+  let totalWidth = handSize * (cardWidth - cardOverlap) + cardOverlap;
 
+  if (totalWidth > maxHandWidth && handSize > 1) {
+    cardOverlap = (handSize * cardWidth - maxHandWidth) / (handSize - 1);
+  }
+  totalWidth = handSize * (cardWidth - cardOverlap) + cardOverlap;
+  if (totalWidth > maxHandWidth) {
+    totalWidth = maxHandWidth;
+  }
+  
   const canJumpIn = gameState.settings.jumpIn;
   const topCard = gameState.topCard;
 
@@ -47,13 +53,6 @@ export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMy
   const activeCardIndex = activeCardId
     ? hand.findIndex((c) => c.id === activeCardId)
     : -1;
-
-  const handleWildColorSelect = (color: CardColor) => {
-    if (pendingWildCard) {
-      onCardPlay(pendingWildCard.id, color);
-      setPendingWildCard(null);
-    }
-  };
 
   return (
     <>
@@ -115,11 +114,13 @@ export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMy
 
             const shouldAnimateOnHover = isMyTurn || isJumpInCard;
 
+            const isDrawnCard = localPlayer?.hasDrawnCard && index === hand.length - 1;
+
             return (
               <motion.div
                 key={card.id}
                 layoutId={card.id}
-                className="absolute cursor-pointer"
+                className={`absolute cursor-pointer ${isDrawnCard ? 'shadow-yellow-400 shadow-2xl' : ''}`}
                 onMouseEnter={
                   shouldAnimateOnHover
                     ? () => setHoveredCard(card.id)
@@ -214,32 +215,6 @@ export default function PlayerHand({ hand, onCardPlay, onJumpIn, onCallUno, isMy
             }
           }
         `}</style>
-      </motion.div>
-      <AnimatePresence>
-          {showUnoButton && (
-            <motion.button
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{
-                scale: 1,
-                opacity: 1,
-                transition: { delay: 0.5, type: "spring" },
-              }}
-              exit={{ scale: 0, opacity: 0 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={handleCallUno}
-              className={`absolute -top-32 font-bold py-4 px-6 rounded-full text-2xl shadow-lg
-                ${hasCalledUno
-                  ? "bg-green-500 text-white cursor-not-allowed"
-                  : "bg-red-600 text-white animate-pulse"
-                }`}
-              disabled={hasCalledUno}
-              style={{ right: 'calc(50% - 250px)' }}
-            >
-              {hasCalledUno ? "UNO CALLED!" : "CALL UNO!"}
-            </motion.button>
-          )}
-        </AnimatePresence>
     </>
   );
 }

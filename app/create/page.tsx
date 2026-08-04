@@ -15,6 +15,8 @@ export default function CreateRoomPage() {
   const [jumpIn, setJumpIn] = useState(true);
   // Bonus cards can be a more complex object if needed
   const [bonusCards, setBonusCards] = useState(false);
+  const [bonusCards, setBonusCards] = useState(false);
+  const [rotate, setRotate] = useState(false);
 
   const handleCreateRoom = () => {
     const newRoomId = generateRoomId();
@@ -25,10 +27,12 @@ export default function CreateRoomPage() {
       timer: turnTimer.toString(),
       jumpIn: jumpIn.toString(),
       bonus: bonusCards.toString(),
+      rotate: rotate.toString(),
       isHost: "true", // Mark this user as the host
     });
 
     router.push(`/play/${newRoomId}?${settings.toString()}`);
+  };
   };
 
   return (
@@ -86,6 +90,14 @@ export default function CreateRoomPage() {
             <span className="text-lg font-bold">Bonus Cards</span>
             <label className="switch">
               <input type="checkbox" checked={bonusCards} onChange={(e) => setBonusCards(e.target.checked)} />
+              <span className="slider round"></span>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-lg font-bold">Rotate Mode</span>
+            <label className="switch">
+              <input type="checkbox" checked={rotate} onChange={(e) => setRotate(e.target.checked)} />
               <span className="slider round"></span>
             </label>
           </div>
