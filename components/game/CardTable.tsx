@@ -114,7 +114,6 @@ export default function CardTable({
         left: `calc(50% + ${xOffset}px)`,
         transform: `rotate(${rotation}deg) scale(${scale})`,
         zIndex,
-        transition: "all 0.2s ease-out",
       };
     } else {
       const opponents = gameState.players.filter((p) => p.id !== localPlayerId);
@@ -163,7 +162,7 @@ export default function CardTable({
               layoutId={card.id}
               className="absolute"
               initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1, ...getCardPosition(card, cardIndexInHand) }}
+              animate={getCardPosition(card, cardIndexInHand)}
               exit={{ opacity: 0, scale: 0.5 }}
               transition={{ type: "spring", stiffness: 500, damping: 50 }}
               onMouseEnter={() => isLocalPlayerCard && shouldAnimateOnHover && setHoveredCard(card.id)}
