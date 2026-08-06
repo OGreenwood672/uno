@@ -36,13 +36,11 @@ export default function GameClient({ roomId }: { roomId: string }) {
   const [pendingDrawnWildCard, setPendingDrawnWildCard] =
     useState<UnoCard | null>(null);
   const [pendingWildCard, setPendingWildCard] = useState<UnoCard | null>(null);
+  const [drawnCardToPlay, setDrawnCardToPlay] = useState<UnoCard | null>(null);
   const [viewportSize, setViewportSize] = useState({
     width: 1200,
     height: 800,
   });
-
-  const searchParams = useSearchParams();
-  const router = useRouter();
 
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "localhost:1999",
@@ -64,6 +62,37 @@ export default function GameClient({ roomId }: { roomId: string }) {
       null,
     [gameState, socket.id],
   );
+
+  const isMyTurn = useMemo(() => {
+    if (!gameState || !localPlayer) return false;
+    return gameState.players[gameState.currentTurnIndex]?.id === localPlayer.id;
+  }, [gameState, localPlayer]);
+
+  useEffect(() => {
+    if (
+      gameState &&
+      localPlayer?.hasDrawnCard &&
+      localPlayer.hand &&
+      isMyTurn
+    ) {
+      const drawnCard = localPlayer.hand[localPlayer.hand.length - 1];
+      const canPlayDrawnCard =
+        drawnCard.color === "wild" ||
+        drawnCard.color === gameState.activeColor ||
+        drawnCard.value === gameState.topCard?.value;
+      if (canPlayDrawnCard) {
+        setDrawnCardToPlay(drawnCard);
+      } else {
+        // Automatically skip turn if drawn card is not playable
+        socket.send(JSON.stringify({ type: "SKIP_TURN" }));
+      }
+    } else {
+      setDrawnCardToPlay(null);
+    }
+  }, [localPlayer?.hasDrawnCard, localPlayer?.hand, isMyTurn, gameState, socket]);
+
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   useEffect(() => {
     if (announcement) {
@@ -169,7 +198,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
 
   const handlePlayCard = (cardId: string, selectedColor?: string) => {
     const card = localPlayer?.hand?.find((c) => c.id === cardId);
-    if (card?.color === "wild") {
+    if (card?.color === "wild" && !selectedColor) {
       setPendingWildCard(card);
     } else {
       socket.send(
@@ -240,11 +269,6 @@ export default function GameClient({ roomId }: { roomId: string }) {
     socket.send(JSON.stringify({ type: "START_GAME" }));
   };
 
-  const isMyTurn = useMemo(() => {
-    if (!gameState || !localPlayer) return false;
-    return gameState.players[gameState.currentTurnIndex]?.id === localPlayer.id;
-  }, [gameState, localPlayer]);
-
   const findJumpInCard = useMemo(() => {
     if (
       !gameState ||
@@ -267,19 +291,18 @@ export default function GameClient({ roomId }: { roomId: string }) {
     const isCurrentTurn =
       gameState.players[gameState.currentTurnIndex]?.id === player.id;
     const angle = (index / total) * 2 * Math.PI;
-    const radius = Math.min(viewportSize.width, viewportSize.height) * 0.35;
+    const radius = Math.min(viewportSize.width, viewportSize.height) * 0.3;
     const x = radius * Math.cos(angle - Math.PI / 2);
     const y = radius * Math.sin(angle - Math.PI / 2);
 
     const cardCount = player.cardCount ?? 0;
-    const maxVisibleCards = 10;
 
-    const isChoosingSwap = gameState.playerChoosingSwapId === player.id;
+    const isChoosingSwap = gameState.playerChoosingSwapId === localPlayer?.id;
 
     return (
       <motion.div
         key={player.id}
-        className={`absolute ${isChoosingSwap ? "cursor-pointer" : ""}`}
+        className={`absolute ${isChoosingSwap ? "cursor-pointer animate-pulse" : ""} z-[80]`}
         initial={{ x: 0, y: 0, scale: 0 }}
         animate={{
           x,
@@ -577,7 +600,17 @@ export default function GameClient({ roomId }: { roomId: string }) {
         {opponents.map((p, i) => renderPlayer(p, i, opponents.length))}
       </div>
 
-      <CardTable gameState={gameState} localPlayerId={socket.id} />
+      <CardTable
+        gameState={gameState}
+        localPlayerId={socket.id}
+        onCardPlay={handlePlayCard}
+        onJumpIn={handleJumpIn}
+        isMyTurn={isMyTurn}
+        hand={sortedHand}
+        drawnCardToPlay={drawnCardToPlay}
+        setPendingDrawnWildCard={setPendingDrawnWildCard}
+        socket={socket}
+      />
 
       <div className="z-10 flex flex-col items-center justify-center gap-6">
         <div className="flex items-center justify-center gap-4">
@@ -697,7 +730,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => socket.send(JSON.stringify({ type: "CALL_UNO" }))}
-              className={`absolute bottom-40 font-bold py-4 px-6 rounded-full text-2xl shadow-lg ${
+              className={`absolute bottom-40 z-[110] font-bold py-4 px-6 rounded-full text-2xl shadow-lg ${
                 localPlayer.hasCalledUno
                   ? "bg-green-500 text-white cursor-not-allowed"
                   : "bg-red-600 text-white animate-pulse"
@@ -710,85 +743,6 @@ export default function GameClient({ roomId }: { roomId: string }) {
           )}
       </AnimatePresence>
 
-      <div
-        className="pointer-events-none absolute bottom-0 left-0 z-20 flex w-full flex-col items-center pb-8"
-        style={{
-          filter: isMyTurn
-            ? "drop-shadow(0 0 30px rgba(255, 255, 150, 0.7))"
-            : "none",
-          transition: "filter 0.5s ease-in-out",
-        }}
-      >
-        <AnimatePresence>
-          {pendingWildCard && (
-            <ColorPicker
-              onColorSelect={(color) => {
-                handlePlayCard(pendingWildCard.id, color);
-                setPendingWildCard(null);
-              }}
-              onCancel={() => setPendingWildCard(null)}
-            />
-          )}
-          {pendingDrawnWildCard && (
-            <ColorPicker
-              onColorSelect={(color) => {
-                socket.send(
-                  JSON.stringify({
-                    type: "PLAY_DRAWN_CARD",
-                    payload: {
-                      cardId: pendingDrawnWildCard.id,
-                      selectedColor: color,
-                    },
-                  }),
-                );
-                setPendingDrawnWildCard(null);
-              }}
-              onCancel={() => setPendingDrawnWildCard(null)}
-            />
-          )}
-        </AnimatePresence>
-        {localPlayer?.hasDrawnCard &&
-          localPlayer.hand &&
-          isMyTurn &&
-          (() => {
-            const drawnCard = localPlayer.hand[localPlayer.hand.length - 1];
-            const canPlayDrawnCard =
-              drawnCard.color === "wild" ||
-              drawnCard.color === gameState.activeColor ||
-              drawnCard.value === gameState.topCard?.value;
-
-            return (
-              <div className="flex gap-4 mt-4">
-                <button
-                  onClick={() => {
-                    if (drawnCard.color === "wild") {
-                      setPendingDrawnWildCard(drawnCard);
-                    } else {
-                      socket.send(
-                        JSON.stringify({
-                          type: "PLAY_DRAWN_CARD",
-                          payload: { cardId: drawnCard.id },
-                        }),
-                      );
-                    }
-                  }}
-                  disabled={!canPlayDrawnCard}
-                  className="px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-lg disabled:bg-gray-500"
-                >
-                  Play Card
-                </button>
-                <button
-                  onClick={() =>
-                    socket.send(JSON.stringify({ type: "SKIP_TURN" }))
-                  }
-                  className="px-6 py-3 bg-yellow-500 text-black font-bold rounded-lg shadow-lg"
-                >
-                  Skip
-                </button>
-              </div>
-            );
-          })()}
-      </div>
       {gameState.status === "bonus_round" && localPlayer && (
         <BonusGame
           gameState={gameState}
@@ -796,6 +750,34 @@ export default function GameClient({ roomId }: { roomId: string }) {
           socket={socket}
         />
       )}
+      <AnimatePresence>
+        {pendingWildCard && (
+          <ColorPicker
+            onColorSelect={(color) => {
+              handlePlayCard(pendingWildCard.id, color);
+              setPendingWildCard(null);
+            }}
+            onCancel={() => setPendingWildCard(null)}
+          />
+        )}
+        {pendingDrawnWildCard && (
+          <ColorPicker
+            onColorSelect={(color) => {
+              socket.send(
+                JSON.stringify({
+                  type: "PLAY_DRAWN_CARD",
+                  payload: {
+                    cardId: pendingDrawnWildCard.id,
+                    selectedColor: color,
+                  },
+                }),
+              );
+              setPendingDrawnWildCard(null);
+            }}
+            onCancel={() => setPendingDrawnWildCard(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

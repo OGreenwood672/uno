@@ -91,6 +91,18 @@ export default function LobbySettings({ settings, socket, onSave, onCancel }: Lo
             <span className="slider round"></span>
           </label>
         </div>
+
+        <div className="flex items-center justify-between text-lg">
+          <span>"Rotate" Mode</span>
+          <label className="switch">
+            <input 
+              type="checkbox" 
+              checked={editableSettings.rotate} 
+              onChange={(e) => handleSettingChange('rotate', e.target.checked)}
+            />
+            <span className="slider round"></span>
+          </label>
+        </div>
       </div>
 
       <div className="flex gap-4">
