@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import usePartySocket from "partysocket/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -196,28 +196,34 @@ export default function GameClient({ roomId }: { roomId: string }) {
     }
   }, [localPlayer?.hand, sortStrategy]);
 
-  const handlePlayCard = (cardId: string, selectedColor?: string) => {
-    const card = localPlayer?.hand?.find((c) => c.id === cardId);
-    if (card?.color === "wild" && !selectedColor) {
-      setPendingWildCard(card);
-    } else {
+  const handlePlayCard = useCallback(
+    (cardId: string, selectedColor?: string) => {
+      const card = localPlayer?.hand?.find((c) => c.id === cardId);
+      if (card?.color === "wild" && !selectedColor) {
+        setPendingWildCard(card);
+      } else {
+        socket.send(
+          JSON.stringify({
+            type: "PLAY_CARD",
+            payload: { cardId, selectedColor },
+          }),
+        );
+      }
+    },
+    [localPlayer?.hand, socket],
+  );
+
+  const handleJumpIn = useCallback(
+    (cardId: string) => {
       socket.send(
         JSON.stringify({
-          type: "PLAY_CARD",
-          payload: { cardId, selectedColor },
+          type: "JUMP_IN",
+          payload: { cardId },
         }),
       );
-    }
-  };
-
-  const handleJumpIn = (cardId: string) => {
-    socket.send(
-      JSON.stringify({
-        type: "JUMP_IN",
-        payload: { cardId },
-      }),
-    );
-  };
+    },
+    [socket],
+  );
 
   const handleLeaveGame = () => {
     socket.send(JSON.stringify({ type: "LEAVE_GAME" }));
@@ -610,6 +616,7 @@ export default function GameClient({ roomId }: { roomId: string }) {
         drawnCardToPlay={drawnCardToPlay}
         setPendingDrawnWildCard={setPendingDrawnWildCard}
         socket={socket}
+        viewportSize={viewportSize}
       />
 
       <div className="z-10 flex flex-col items-center justify-center gap-6">
@@ -730,13 +737,12 @@ export default function GameClient({ roomId }: { roomId: string }) {
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => socket.send(JSON.stringify({ type: "CALL_UNO" }))}
-              className={`absolute bottom-40 z-[110] font-bold py-4 px-6 rounded-full text-2xl shadow-lg ${
+              className={`absolute z-[110] font-bold py-3 px-5 md:py-4 md:px-6 rounded-full text-xl md:text-2xl shadow-lg ${
                 localPlayer.hasCalledUno
                   ? "bg-green-500 text-white cursor-not-allowed"
                   : "bg-red-600 text-white animate-pulse"
-              }`}
+              } bottom-28 right-6`}
               disabled={localPlayer.hasCalledUno}
-              style={{ left: "50%", transform: "translateX(-50%)" }}
             >
               {localPlayer.hasCalledUno ? "UNO CALLED!" : "CALL UNO!"}
             </motion.button>
